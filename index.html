@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arduino Remote Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+  <style>
+    .connection-status.online { background-color: #10B981; }
+    .connection-status.offline { background-color: #EF4444; }
+    .connection-status.connecting { background-color: #F59E0B; }
+    .pin-config-card { transition: all 0.3s ease; }
+    .pin-config-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+    .slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #3B82F6; cursor: pointer; }
+  </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 min-h-screen">
+  <div class="container mx-auto px-4 py-8">
+    <!-- Header -->
+    <header class="flex justify-between items-center mb-8">
+      <h1 class="text-3xl font-bold text-gray-800 dark:text-white">
+        <i class="fas fa-microchip mr-2"></i> Arduino Remote Control
+      </h1>
+      <div class="flex items-center space-x-4">
+        <div id="connectionStatus" class="connection-status offline px-4 py-2 rounded-full text-white flex items-center">
+          <span class="h-3 w-3 rounded-full mr-2"></span>
+          <span>Disconnected</span>
+        </div>
+        <button id="themeToggle" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+          <i class="fas fa-moon"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Connection Panel -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-8">
+      <h2 class="text-xl font-semibold text-gray-800 dark:text-white mb-4">
+        <i class="fas fa-wifi mr-2"></i>Connection Settings
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Arduino IP</label>
+          <input id="arduinoIp" type="text" placeholder="192.168.1.100" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Port</label>
+          <input id="arduinoPort" type="text" value="80" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white">
+        </div>
+        <div class="flex items-end">
+          <button id="connectBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition flex items-center justify-center">
+            <i class="fas fa-plug mr-2"></i> Connect
+          </button>
+        </div>
+      </div>
+      <div id="connectionInfo" class="mt-4 hidden">
+        <div class="flex items-center text-sm text-gray-600 dark:text-gray-400">
+          <i class="fas fa-info-circle mr-2"></i>
+          <span>Connected to: <span id="connectedIp" class="font-medium"></span> (SSID: <span id="connectedSsid" class="font-medium"></span>)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pin Configuration -->
+    <div class="mb-6 flex justify-between items-center">
+      <h2 class="text-xl font-semibold text-gray-800 dark:text-white">
+        <i class="fas fa-sliders-h mr-2"></i>Pin Configuration
+      </h2>
+      <button id="refreshPins" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+        <i class="fas fa-sync-alt mr-1"></i> Refresh
+      </button>
+    </div>
+
+    <div id="pinContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <!-- Pin cards will be dynamically inserted here -->
+    </div>
+
+    <!-- Add New Pin Button -->
+    <div class="mt-8 text-center">
+      <button id="addPinBtn" class="bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-6 rounded-lg transition inline-flex items-center">
+        <i class="fas fa-plus mr-2"></i> Add New Pin Configuration
+      </button>
+    </div>
+  </div>
+
+  <!-- Pin Configuration Modal -->
+  <div id="pinModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-full max-w-md">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-semibold text-gray-800 dark:text-white">Configure Pin</h3>
+        <button id="closeModal" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      
+      <form id="pinForm" class="space-y-4">
+        <input type="hidden" id="editPinIndex">
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Pin Number</label>
+          <select id="pinNumber" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white">
+            <option value="D0">D0</option>
+            <option value="D1">D1</option>
+            <option value="D2">D2</option>
+            <option value="D3">D3</option>
+            <option value="D4">D4</option>
+            <option value="D5">D5</option>
+            <option value="D6">D6</option>
+            <option value="D7">D7</option>
+            <option value="D8">D8</option>
+            <option value="A0">A0 (Analog)</option>
+          </select>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Pin Mode</label>
+          <select id="pinMode" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white">
+            <option value="1">Output</option>
+            <option value="0">Input</option>
+          </select>
+        </div>
+        
+        <div id="pinTypeContainer">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Pin Type</label>
+          <select id="pinType" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white">
+            <option value="digital">Digital</option>
+            <option value="pwm">PWM</option>
+            <option value="analog">Analog (A0 only)</option>
+          </select>
+        </div>
+        
+        <div id="pinValueContainer" class="pt-2">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Initial Value</label>
+          <div class="flex items-center space-x-4">
+            <input id="pinValue" type="range" min="0" max="255" value="0" class="w-full slider">
+            <span id="pinValueDisplay" class="text-gray-700 dark:text-gray-300 w-12 text-center">0</span>
+          </div>
+        </div>
+        
+        <div class="pt-4">
+          <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition">
+            Save Configuration
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Global variables
+    let arduinoBaseUrl = '';
+    let isConnected = false;
+    let isDarkMode = localStorage.getItem('darkMode') === 'true';
+    let pins = [];
+    let currentEditPinIndex = -1;
+
+    // DOM Elements
+    const connectionStatus = document.getElementById('connectionStatus');
+    const arduinoIpInput = document.getElementById('arduinoIp');
+    const arduinoPortInput = document.getElementById('arduinoPort');
+    const connectBtn = document.getElementById('connectBtn');
+    const connectionInfo = document.getElementById('connectionInfo');
+    const connectedIp = document.getElementById('connectedIp');
+    const connectedSsid = document.getElementById('connectedSsid');
+    const pinContainer = document.getElementById('pinContainer');
+    const refreshPinsBtn = document.getElementById('refreshPins');
+    const addPinBtn = document.getElementById('addPinBtn');
+    const pinModal = document.getElementById('pinModal');
+    const closeModalBtn = document.getElementById('closeModal');
+    const pinForm = document.getElementById('pinForm');
+    const pinNumberSelect = document.getElementById('pinNumber');
+    const pinModeSelect = document.getElementById('pinMode');
+    const pinTypeSelect = document.getElementById('pinType');
+    const pinValueInput = document.getElementById('pinValue');
+    const pinValueDisplay = document.getElementById('pinValueDisplay');
+    const pinTypeContainer = document.getElementById('pinTypeContainer');
+    const pinValueContainer = document.getElementById('pinValueContainer');
+    const themeToggleBtn = document.getElementById('themeToggle');
+    const editPinIndexInput = document.getElementById('editPinIndex');
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      // Set initial theme
+      if (isDarkMode) {
+        document.documentElement.classList.add('dark');
+        themeToggleBtn.innerHTML = '<i class="fas fa-sun"></i>';
+      }
+      
+      // Load any saved Arduino IP
+      const savedIp = localStorage.getItem('arduinoIp');
+      if (savedIp) {
+        arduinoIpInput.value = savedIp;
+      }
+      
+      // Set up event listeners
+      setupEventListeners();
+      
+      // Check initial connection
+      checkConnection();
+    });
+
+    // Set up event listeners
+    function setupEventListeners() {
+      // Theme toggle
+      themeToggleBtn.addEventListener('click', toggleTheme);
+      
+      // Connection
+      connectBtn.addEventListener('click', connectToArduino);
+      
+      // Pin value display
+      pinValueInput.addEventListener('input', () => {
+        pinValueDisplay.textContent = pinValueInput.value;
+      });
+      
+      // Pin mode change
+      pinModeSelect.addEventListener('change', () => {
+        if (pinModeSelect.value === '0') { // Input
+          pinValueContainer.classList.add('hidden');
+        } else { // Output
+          pinValueContainer.classList.remove('hidden');
+        }
+      });
+      
+      // Pin number change (hide analog for digital pins)
+      pinNumberSelect.addEventListener('change', () => {
+        if (pinNumberSelect.value === 'A0') {
+          pinTypeSelect.innerHTML = `
+            <option value="analog">Analog</option>
+          `;
+          pinModeSelect.value = '0'; // Input by default for analog
+          pinModeSelect.dispatchEvent(new Event('change'));
+        } else {
+          pinTypeSelect.innerHTML = `
+            <option value="digital">Digital</option>
+            <option value="pwm">PWM</option>
+          `;
+        }
+      });
+      
+      // Refresh pins
+      refreshPinsBtn.addEventListener('click', fetchPins);
+      
+      // Add new pin
+      addPinBtn.addEventListener('click', () => {
+        currentEditPinIndex = -1;
+        editPinIndexInput.value = '';
+        pinForm.reset();
+        pinValueInput.value = '0';
+        pinValueDisplay.textContent = '0';
+        pinModal.classList.remove('hidden');
+      });
+      
+      // Close modal
+      closeModalBtn.addEventListener('click', () => {
+        pinModal.classList.add('hidden');
+      });
+      
+      // Save pin configuration
+      pinForm.addEventListener('submit', savePinConfig);
+    }
+
+    // Toggle dark/light theme
+    function toggleTheme() {
+      isDarkMode = !isDarkMode;
+      document.documentElement.classList.toggle('dark');
+      localStorage.setItem('darkMode', isDarkMode);
+      themeToggleBtn.innerHTML = isDarkMode ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+    }
+
+    // Connect to Arduino
+    function connectToArduino() {
+      const ip = arduinoIpInput.value.trim();
+      const port = arduinoPortInput.value.trim();
+      
+      if (!ip) {
+        alert('Please enter Arduino IP address');
+        return;
+      }
+      
+      arduinoBaseUrl = `http://${ip}:${port}`;
+      localStorage.setItem('arduinoIp', ip);
+      
+      updateConnectionStatus('connecting', 'Connecting...');
+      
+      // Check connection
+      fetch(`${arduinoBaseUrl}/status`)
+        .then(response => {
+          if (response.ok) {
+            return response.json();
+          }
+          throw new Error('Connection failed');
+        })
+        .then(data => {
+          isConnected = true;
+          updateConnectionStatus('online', 'Connected');
+          connectedIp.textContent = ip;
+          connectedSsid.textContent = data.ssid || 'Unknown';
+          connectionInfo.classList.remove('hidden');
+          fetchPins();
+        })
+        .catch(error => {
+          console.error('Connection error:', error);
+          isConnected = false;
+          updateConnectionStatus('offline', 'Connection Failed');
+          connectionInfo.classList.add('hidden');
+        });
+    }
+
+    // Update connection status UI
+    function updateConnectionStatus(status, text) {
+      connectionStatus.className = `connection-status ${status} px-4 py-2 rounded-full text-white flex items-center`;
+      connectionStatus.innerHTML = `
+        <span class="h-3 w-3 rounded-full mr-2"></span>
+        <span>${text}</span>
+      `;
+    }
+
+    // Check current connection status
+    function checkConnection() {
+      if (arduinoBaseUrl) {
+        fetch(`${arduinoBaseUrl}/status`)
+          .then(response => {
+            if (response.ok) {
+              isConnected = true;
+              updateConnectionStatus('online', 'Connected');
+            } else {
+              isConnected = false;
+              updateConnectionStatus('offline', 'Disconnected');
+            }
+          })
+          .catch(() => {
+            isConnected = false;
+            updateConnectionStatus('offline', 'Disconnected');
+          });
+      }
+    }
+
+    // Fetch current pin configurations from Arduino
+    function fetchPins() {
+      if (!isConnected) {
+        alert('Please connect to Arduino first');
+        return;
+      }
+      
+      fetch(`${arduinoBaseUrl}/getPins`)
+        .then(response => response.json())
+        .then(data => {
+          pins = data;
+          renderPins();
+        })
+        .catch(error => {
+          console.error('Error fetching pins:', error);
+          alert('Failed to fetch pin configurations');
+        });
+    }
+
+    // Render pin cards
+    function renderPins() {
+      pinContainer.innerHTML = '';
+      
+      pins.forEach((pin, index) => {
+        if (pin.mode !== undefined) {
+          const pinCard = document.createElement('div');
+          pinCard.className = 'pin-config-card bg-white dark:bg-gray-800 rounded-xl shadow-md p-6';
+          
+          const isInput = pin.mode == 0;
+          const isAnalog = pin.type === 'analog';
+          const isPWM = pin.type === 'pwm';
+          
+          pinCard.innerHTML = `
+            <div class="flex justify-between items-start mb-4">
+              <h3 class="text-lg font-semibold text-gray-800 dark:text-white">
+                ${pin.pin} (${isInput ? 'Input' : 'Output'})
+              </h3>
+              <span class="px-3 py-1 rounded-full text-xs ${
+                isInput ? 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200' : 
+                'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200'
+              }">
+                ${pin.type}
+              </span>
+            </div>
+            
+            <div class="mb-4">
+              <div class="flex justify-between items-center mb-1">
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Current Value</span>
+                <span class="text-lg font-semibold ${
+                  isInput ? 'text-purple-600 dark:text-purple-400' : 'text-blue-600 dark:text-blue-400'
+                }">${pin.value}</span>
+              </div>
+              ${!isInput ? `
+              <div class="flex items-center space-x-4">
+                <input type="range" min="0" max="${isPWM ? '255' : '1'}" value="${pin.value}" 
+                  class="w-full slider" data-pin-index="${index}">
+                <span class="text-gray-700 dark:text-gray-300 w-12 text-center pin-value-display">${pin.value}</span>
+              </div>
+              ` : ''}
+            </div>
+            
+            <div class="flex space-x-2">
+              <button class="edit-pin-btn flex-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-medium py-2 px-4 rounded-lg transition" data-pin-index="${index}">
+                <i class="fas fa-edit mr-2"></i> Edit
+              </button>
+              ${isInput ? `
+              <button class="refresh-value-btn flex-1 bg-green-200 dark:bg-green-800 hover:bg-green-300 dark:hover:bg-green-700 text-green-800 dark:text-green-200 font-medium py-2 px-4 rounded-lg transition" data-pin-index="${index}">
+                <i class="fas fa-sync-alt mr-2"></i> Refresh
+              </button>
+              ` : ''}
+            </div>
+          `;
+          
+          pinContainer.appendChild(pinCard);
+        }
+      });
+      
+      // Add event listeners to sliders
+      document.querySelectorAll('.slider').forEach(slider => {
+        slider.addEventListener('input', (e) => {
+          const index = e.target.getAttribute('data-pin-index');
+          const value = e.target.value;
+          const display = e.target.nextElementSibling;
+          display.textContent = value;
+          
+          // Update pin value on Arduino
+          updatePinValue(index, value);
+        });
+      });
+      
+      // Add event listeners to edit buttons
+      document.querySelectorAll('.edit-pin-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const index = e.target.getAttribute('data-pin-index') || 
+                       e.target.parentElement.getAttribute('data-pin-index');
+          editPinConfig(index);
+        });
+      });
+      
+      // Add event listeners to refresh buttons
+      document.querySelectorAll('.refresh-value-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const index = e.target.getAttribute('data-pin-index') || 
+                       e.target.parentElement.getAttribute('data-pin-index');
+          refreshPinValue(index);
+        });
+      });
+    }
+
+    // Edit pin configuration
+    function editPinConfig(index) {
+      const pin = pins[index];
+      currentEditPinIndex = index;
+      
+      // Set form values
+      pinNumberSelect.value = pin.pin;
+      pinModeSelect.value = pin.mode;
+      pinTypeSelect.value = pin.type;
+      pinValueInput.value = pin.value;
+      pinValueDisplay.textContent = pin.value;
+      
+      // Trigger change events
+      pinNumberSelect.dispatchEvent(new Event('change'));
+      pinModeSelect.dispatchEvent(new Event('change'));
+      
+      // Show modal
+      editPinIndexInput.value = index;
+      pinModal.classList.remove('hidden');
+    }
+
+    // Save pin configuration
+    function savePinConfig(e) {
+      e.preventDefault();
+      
+      const pinNumber = pinNumberSelect.value;
+      const pinMode = pinModeSelect.value;
+      const pinType = pinTypeSelect.value;
+      const pinValue = pinValueInput.value;
+      
+      const pinData = {
+        pin: pinNumber,
+        mode: pinMode,
+        value: pinValue,
+        type: pinType
+      };
+      
+      // Update local array
+      if (currentEditPinIndex >= 0) {
+        pins[currentEditPinIndex] = pinData;
+      } else {
+        pins.push(pinData);
+      }
+      
+      // Send to Arduino
+      fetch(`${arduinoBaseUrl}/setPin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `pin=${pinNumber}&mode=${pinMode}&value=${pinValue}&type=${pinType}`
+      })
+      .then(response => {
+        if (response.ok) {
+          renderPins();
+          pinModal.classList.add('hidden');
+        } else {
+          throw new Error('Failed to save pin configuration');
+        }
+      })
+      .catch(error => {
+        console.error('Error saving pin:', error);
+        alert('Failed to save pin configuration');
+      });
+    }
+
+    // Update pin value
+    function updatePinValue(index, value) {
+      const pin = pins[index];
+      
+      fetch(`${arduinoBaseUrl}/setPin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `pin=${pin.pin}&mode=${pin.mode}&value=${value}&type=${pin.type}`
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Failed to update pin value');
+        }
+      })
+      .catch(error => {
+        console.error('Error updating pin:', error);
+      });
+    }
+
+    // Refresh pin value (for inputs)
+    function refreshPinValue(index) {
+      fetchPins();
+    }
+
+    // Periodically check connection status
+    setInterval(checkConnection, 10000);
+  </script>
+</body>
+</html>
